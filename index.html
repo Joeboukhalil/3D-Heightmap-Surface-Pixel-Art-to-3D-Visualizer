@@ -20,7 +20,7 @@
 
 <div id="controls">
   <input type="file" id="imageInput" accept="image/*">
-  <button id="saveBtn" disabled>Download Surface Image</button>
+  <button id="saveBtn" disabled>Download 45° Surface Image</button>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
@@ -38,7 +38,8 @@ function initScene() {
   light.position.set(1, 1, 1);
   scene.add(light);
 
-  camera.position.set(0, 1.5, 5);
+  camera.position.set(3, 3, 3); // 45° diagonal view
+  camera.lookAt(0, 0, 0);
   animate();
 }
 
@@ -73,18 +74,19 @@ document.getElementById('imageInput').addEventListener('change', event => {
 document.getElementById('saveBtn').addEventListener('click', () => {
   if (!mesh || !texture) return;
 
-  // Create a top-down orthographic camera
   const size = 1024;
-  const orthoCam = new THREE.OrthographicCamera(-2.5, 2.5, 2.5, -2.5, 0.1, 100);
-  orthoCam.position.set(0, 5, 0);
-  orthoCam.lookAt(0, 0, 0);
-
   const renderTarget = new THREE.WebGLRenderTarget(size, size);
   renderer.setRenderTarget(renderTarget);
-  renderer.render(scene, orthoCam);
+
+  // Set 45° view
+  const tempCam = new THREE.PerspectiveCamera(75, 1, 0.1, 100);
+  tempCam.position.set(3, 3, 3);
+  tempCam.lookAt(0, 0, 0);
+  renderer.render(scene, tempCam);
+
   renderer.setRenderTarget(null);
 
-  // Extract the rendered image as PNG
+  // Extract image data
   const pixels = new Uint8Array(size * size * 4);
   renderer.readRenderTargetPixels(renderTarget, 0, 0, size, size, pixels);
 
@@ -96,10 +98,18 @@ document.getElementById('saveBtn').addEventListener('click', () => {
   imageData.data.set(pixels);
   ctx.putImageData(imageData, 0, 0);
 
-  // Download as PNG
+  // Flip vertically (Three.js renders upside-down)
+  const flipped = document.createElement('canvas');
+  flipped.width = size;
+  flipped.height = size;
+  const fctx = flipped.getContext('2d');
+  fctx.scale(1, -1);
+  fctx.drawImage(canvas, 0, -size);
+
+  // Download PNG
   const link = document.createElement('a');
-  link.download = 'colored_heightmap_surface.png';
-  link.href = canvas.toDataURL('image/png');
+  link.download = 'surface_45degree.png';
+  link.href = flipped.toDataURL('image/png');
   link.click();
 });
 
