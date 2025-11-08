@@ -5,29 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>3D Heightmap Surface — Pixel Art Visualizer</title>
 <style>
-  body { margin: 0; overflow: hidden; background: #111; font-family: Arial, sans-serif; color: white; }
-  #controls {
-    position: absolute; top: 70px; left: 20px;
-    display: flex; gap: 10px;
-  }
-  input[type="file"], button {
-    padding: 10px 15px; font-size: 14px;
-    border: none; border-radius: 8px; cursor: pointer;
-  }
-  input[type="file"] {
-    background: #222; color: white;
-  }
-  button {
-    background: #0a84ff; color: white;
-  }
-  h1 {
-    position: absolute; top: 10px; left: 20px;
-    font-size: 22px; margin: 0;
-  }
-  h2 {
-    position: absolute; top: 35px; left: 20px;
-    font-size: 14px; color: #aaa; margin: 0;
-  }
+  body { margin: 0; overflow: hidden; background: #111; color: white; font-family: Arial, sans-serif; }
+  #controls { position: absolute; top: 70px; left: 20px; display: flex; gap: 10px; z-index: 10; }
+  input, button { padding: 10px 15px; border: none; border-radius: 8px; cursor: pointer; }
+  input { background: #222; color: white; }
+  button { background: #0a84ff; color: white; }
+  h1 { position: absolute; top: 10px; left: 20px; margin: 0; }
+  h2 { position: absolute; top: 35px; left: 20px; font-size: 14px; color: #aaa; margin: 0; }
 </style>
 </head>
 <body>
@@ -36,81 +20,87 @@
 
 <div id="controls">
   <input type="file" id="imageInput" accept="image/*">
-  <button id="saveBtn" disabled>Download Model</button>
+  <button id="saveBtn" disabled>Download Surface Image</button>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/exporters/GLTFExporter.js"></script>
-
 <script>
-let scene, camera, renderer, mesh, controlsEnabled = false;
+let scene, camera, renderer, mesh, texture;
 
-// Initialize scene
 function initScene() {
   scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
 
   const light = new THREE.DirectionalLight(0xffffff, 2);
   light.position.set(1, 1, 1);
   scene.add(light);
-  camera.position.set(0, 1.5, 5);
 
+  camera.position.set(0, 1.5, 5);
   animate();
 }
 
 function animate() {
   requestAnimationFrame(animate);
-  if (mesh && controlsEnabled) mesh.rotation.z += 0.005;
+  if (mesh) mesh.rotation.z += 0.005;
   renderer.render(scene, camera);
 }
 
-// Handle image upload
 document.getElementById('imageInput').addEventListener('change', event => {
   const file = event.target.files[0];
   if (!file) return;
-
   const url = URL.createObjectURL(file);
-  loadImageAs3D(url);
-});
-
-function loadImageAs3D(imageURL) {
   const loader = new THREE.TextureLoader();
-  loader.load(imageURL, texture => {
-    if (mesh) scene.remove(mesh); // remove old mesh
-
+  loader.load(url, tex => {
+    if (mesh) scene.remove(mesh);
+    texture = tex;
     const geometry = new THREE.PlaneGeometry(5, 5, 128, 128);
     const material = new THREE.MeshStandardMaterial({
       map: texture,
       displacementMap: texture,
       displacementScale: 1,
-      color: 0xcccccc,
+      color: 0xffffff
     });
-
     mesh = new THREE.Mesh(geometry, material);
     mesh.rotation.x = -Math.PI / 2.5;
     scene.add(mesh);
-    controlsEnabled = true;
-
     document.getElementById('saveBtn').disabled = false;
   });
-}
+});
 
-// Download model as .glb
 document.getElementById('saveBtn').addEventListener('click', () => {
-  if (!mesh) return;
-  const exporter = new THREE.GLTFExporter();
-  exporter.parse(mesh, result => {
-    const blob = new Blob([JSON.stringify(result)], { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'model.glb';
-    a.click();
-    URL.revokeObjectURL(url);
-  });
+  if (!mesh || !texture) return;
+
+  // Create a top-down orthographic camera
+  const size = 1024;
+  const orthoCam = new THREE.OrthographicCamera(-2.5, 2.5, 2.5, -2.5, 0.1, 100);
+  orthoCam.position.set(0, 5, 0);
+  orthoCam.lookAt(0, 0, 0);
+
+  const renderTarget = new THREE.WebGLRenderTarget(size, size);
+  renderer.setRenderTarget(renderTarget);
+  renderer.render(scene, orthoCam);
+  renderer.setRenderTarget(null);
+
+  // Extract the rendered image as PNG
+  const pixels = new Uint8Array(size * size * 4);
+  renderer.readRenderTargetPixels(renderTarget, 0, 0, size, size, pixels);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const imageData = ctx.createImageData(size, size);
+  imageData.data.set(pixels);
+  ctx.putImageData(imageData, 0, 0);
+
+  // Download as PNG
+  const link = document.createElement('a');
+  link.download = 'colored_heightmap_surface.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
 });
 
 initScene();
